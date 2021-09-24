@@ -1,0 +1,324 @@
+---
+title: "NBA data analysis"
+author: "Rohan Jayaram, Mahin Kadabi, Nate DeSisto, Hari Purnapatre, Rucha Dandavate"
+date: "9/16/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+## Github working link
+
+(https://github.com/RohanJayaram/NBA-data-analytics)
+
+
+## We have Used this Reproducable Source code "https://raw.githubusercontent.com/ixarchakos/nba-games/master/data/nba_games_2015_2016.csv"
+
+# Short Description:- 
+## The National Basketball Association is a professional basketball league in the United States. It consists of thirty teams distributed into two conferences. Each year, each team plays 82 regular season games, followed by playoffs and championship.
+
+## We have taken data from the 2015-2016 regular season and will be taking an in depth look at it. We want to analyze the data to be able to answer a few questions. We are interested in finding the factors that help contribute to a win. We will be analyzing halftime data, home and away teams, and different box score statistics including: three pointers, rebounds, etc.
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+```{r}
+library(tidyverse)
+library(caret)
+library(dplyr)
+```
+
+## Reading the data and getting idea of all the columns and rows.
+
+```{r}
+data_url <- url("https://raw.githubusercontent.com/ixarchakos/nba-games/master/data/nba_games_2015_2016.csv")
+data <- read_csv(data_url)                
+              
+nba.data <- as_tibble(data)
+df <- as_tibble(data)
+```
+
+
+## After looking at the data we need to Separate the Half time score column to two different columns namely home half time score and away half time score.
+
+```{r}
+nba.data <- nba.data %>%
+  separate(half_time_score, c("home_half_time_score", "away_half_time_score"), sep = "-")
+nba.data
+```
+
+
+## Adding new columns, if the home points are greater than away points then the winning team will be Home team else away team.
+
+```{r}
+nba.data <- nba.data %>%
+  mutate(nba.data, H_or_A_win = ifelse(home_points > away_points, 'H', 'A'), H_or_A_halftime = ifelse(home_half_time_score > away_half_time_score, "H", "A"), winning_team = ifelse(home_points > away_points, home_team, away_team))
+nba.data
+```
+
+
+
+## Cleaning the Dataset, eleminating missing values, errors.
+
+```{r}
+nba.data.clean <- nba.data %>%
+  select(id,date, home_team, home_points, away_team, away_points, winning_team ,H_or_A_win, home_half_time_score, away_half_time_score,H_or_A_halftime, `three_point_%_home`, `three_point_%_away`)
+nba.data.clean
+```
+
+# The Bar Chart represents the percentage of home team and away team winning.
+
+```{r}
+counttable <- dplyr::count(nba.data.clean, H_or_A_win) 
+counttable <- counttable %>% 
+  mutate(percentage = n/sum(n)*100) %>%
+  ggplot(aes(x = H_or_A_win, y = percentage, fill=H_or_A_win)) + geom_bar(stat="identity", width = 0.4)  +
+      theme(aspect.ratio = 2/1)
+counttable
+
+
+```
+
+## The Graph gives an overview of all Teams and there number of wins.
+
+```{r}
+barplot_winning_team <- 
+  ggplot(nba.data.clean, aes(x = winning_team, fill = winning_team)) + geom_bar(width = 0.7) + coord_flip() +
+  scale_fill_hue(c = 40) +
+  theme(legend.position="none") + labs(y = 'No of Wins', x= 'Team')
+barplot_winning_team
+```
+
+## Half time analysis
+
+```{r}
+df = as_tibble(nba.data)
+halftime = df %>%
+  separate(fg_made_attempted_home, into = c("fg_made_home", "fg_attemps_home")) %>% 
+  separate(fg_made_attempted_away, into = c("fg_made_away", "fg_attemps_away")) %>% 
+  separate(`3pt_made_attempted_home`, into = c("3pt_made_home", "3pt_attemps_home")) %>% 
+  separate(`3pt_made_attempted_away`, into = c("3pt_made_away", "3pt_attemps_away")) %>% 
+  separate(ft_made_attempted_home, into = c("ft_made_home", "ft_attemps_home")) %>% 
+  separate(ft_made_attempted_away, into = c("ft_made_away", "ft_attemps_away")) 
+```
+```{r}
+halftime2 = halftime %>%
+  mutate_if(is.character, as.integer) %>% 
+  mutate(point_difference = home_points - away_points) %>% 
+  mutate(final_score_home = home_points - away_points) %>% 
+  mutate(halftime_difference_home = home_half_time_score - away_half_time_score)
+```
+
+
+## If the team is winning in the first half then the percentage of that team wins the game increses.
+
+```{r}
+ggplot(halftime2, aes( x = halftime_difference_home, y = final_score_home)) + 
+  geom_point(aes(color = final_score_home > 0), show.legend = FALSE) + labs(x = "Halftime Point Difference",  y = "Final Point Difference", 
+                       subtitle = "Final Score Difference") + geom_hline(yintercept=0, color = "Black", size = 2) + geom_vline(xintercept=0, size = 2, color = "Black") + stat_smooth()
+  
+```
+
+
+# Creating confusion Matrix, prediction for home and away team is obtained. From this results home team playing a Home game has more advantage and the count we received was 545.
+```{r}
+halftime_lead <- factor(nba.data.clean$H_or_A_halftime)
+fulltime_win <- factor(nba.data.clean$H_or_A_win)
+ 
+#Creating confusion matrix
+cm <- confusionMatrix(data=fulltime_win, reference = halftime_lead)
+ 
+#Display results 
+cm
+```
+
+
+```{r}
+draw_confusion_matrix <- function(cm) {
+  layout(matrix(c(1,1,2)))
+  par(mar=c(2,2,2,2))
+  plot(c(100, 345), c(300, 450), type = "n", xlab="", ylab="", xaxt='n', yaxt='n')
+  title('Halftime lead turning into win', cex.main=2)
+  # create the matrix 
+  rect(150, 430, 240, 370, col='#3F97D0')
+  text(195, 435, 'Away_lead', cex=1.2)
+  rect(250, 430, 340, 370, col='#F7AD50')
+  text(295, 435, 'Home_lead', cex=1.2)
+  text(125, 370, 'Full_time_winner', cex=1.3, srt=90, font=2)
+  text(245, 450, 'Half_time_lead', cex=1.3, font=2)
+  rect(150, 305, 240, 365, col='#F7AD50')
+  rect(250, 305, 340, 365, col='#3F97D0')
+  text(140, 400, 'Away_win', cex=1.2, srt=90)
+  text(140, 335, 'Home_win', cex=1.2, srt=90)
+  #add in the cm results
+  res <- as.numeric(cm$table)
+  text(195, 400, res[1], cex=1.6, font=2, col='white')
+  text(195, 335, res[2], cex=1.6, font=2, col='white')
+  text(295, 400, res[3], cex=1.6, font=2, col='white')
+  text(295, 335, res[4], cex=1.6, font=2, col='white')
+}
+```
+The above confusion matrix function was taken from stackoverflow.
+url - https://stackoverflow.com/questions/23891140/r-how-to-visualize-confusion-matrix-using-the-caret-package
+```{r}
+# cm <- confusionMatrix(reference = nba.data.clean$fulltime_win, data =  nba.data.clean$halftime_lead)
+draw_confusion_matrix(cm)
+```
+## Rebound analysis
+
+# We created a new column which is the difference between the total rebounds by home team and total rebounds by away team. We also analysed the point difference by getting difference from home points and away points.
+```{r}
+halftime2 = halftime %>%
+  mutate_if(is.character, as.integer)
+halftime2<-mutate(halftime2,rebounds_difference_for_home_team=total_rebounds_home-total_rebounds_away)
+halftime2<-mutate(halftime2, points_difference=home_points-away_points)
+halftime2
+```
+
+## If the point difference is greater than 0 then the Home team wins. The median of the Boxplot when its towards the positive side of the graph then the chances of winning the game are high.
+```{r}
+halftime2<-halftime2 %>%
+  group_by(points_difference,rebounds_difference_for_home_team) %>%
+  mutate(team_wins=ifelse(points_difference>0,'Home Wins','Away wins'))
+ggplot(data=halftime2,aes(x=team_wins,y=rebounds_difference_for_home_team))+geom_boxplot(fill='blue',alpha=0.2)+
+labs(title = 'Boxplot for Home and Away win based on the rebounds difference')+coord_flip()
+```
+##Three pointer
+```{r}
+three_pt <- lm((`three_point_%_home`) ~ (H_or_A_win), data = nba.data.clean)
+summary(three_pt)$coef
+```
+## Feature Analysis
+**Cleaning Data**
+```{r}
+df <- df %>%
+  separate(`3pt_made_attempted_home`, into = c("3pt_attemps_home", "3pt_made_home")) %>% 
+  separate(`3pt_made_attempted_away`, into = c("3pt_attemps_away", "3pt_made_away")) 
+df$`3pt_made_home` <- as.numeric(df$`3pt_made_home`)
+df$`3pt_made_away` <- as.numeric(df$`3pt_made_away`)
+df = df %>%
+  separate(ft_made_attempted_home, into = c("ft_attemps_home", "ft_made_home")) %>% 
+  separate(ft_made_attempted_away, into = c("ft_attemps_away", "ft_made_away")) 
+df <- df %>%
+  mutate(Winning_freethrow_attempts = ifelse(ft_attemps_home > ft_attemps_away, ft_attemps_home, ft_attemps_away))
+df <- df %>%
+  mutate(Winning_Team = ifelse(home_points > away_points, home_team, away_team))
+df <- df %>%
+  mutate(Won = ifelse(home_points > away_points, 1, 0))
+df <- df %>%
+  mutate(Winning_points = ifelse(home_points > away_points, home_points, away_points))
+ft_attemps_home <- as.double(df$ft_attemps_home)
+ft_attemps_away <- as.double(df$ft_attemps_away)
+#2
+df <- df %>%
+  mutate( Losing_freethrow_attempts= ifelse(ft_attemps_home <ft_attemps_away, ft_attemps_home, ft_attemps_away))
+df <- df %>%
+  mutate(Winning_points = ifelse(home_points > away_points, home_points, away_points))
+df <- df %>%
+  mutate(Losing_points = ifelse(home_points < away_points, home_points, away_points))
+df <- df %>%
+  mutate(Losing_Team = ifelse(home_points < away_points, home_team, away_team))
+df <- df %>%
+  mutate(Lost = ifelse(home_points < away_points, 0, 1))
+df$Winning_freethrow_attempts <- as.double(df$Winning_freethrow_attempts)
+df$Losing_freethrow_attempts <- as.double(df$Losing_freethrow_attempts)
+```
+**Free Throw Attempts By Team**
+```{r}
+df[c('Winning_Team', 'Winning_freethrow_attempts', 'Losing_Team', 'Losing_freethrow_attempts')]
+```
+**Visualization for free throws attempted**
+## The Graph represents win or loss by taking the mean of winning free throw attempts and losing freee throw attempts.
+```{r}
+df1 <- df %>%
+  group_by(Winning_Team) %>%
+  filter(Winning_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(Win_Free = mean(Winning_freethrow_attempts))
+df2 <- df %>%
+  group_by(Losing_Team) %>%
+  filter(Losing_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(Losing_Free = mean(Losing_freethrow_attempts)) %>%
+  as.data.frame()
+colnames(df2) = c('Winning_Team', 'Win_Free')
+v3 <- rbind(df1, df2)
+v3$group <- c(rep("Team Won", nrow(df1)), rep("Team Lost", nrow(df2)))
+v3 %>%
+  ggplot(aes(x=Winning_Team, y=Win_Free, fill = group)) +
+  geom_bar(stat="identity", position = 'dodge') + labs(x = 'Team', y = 'Free Throws Attempted', title = 'FreeThrowAttempted vs W/L')
+```
+
+**Visualization for home vs away points scored**
+# The Graph Represents Win or Loss from the Home points and away points.
+```{r}
+dp1 <- df %>%
+  group_by(Winning_Team) %>%
+  filter(Winning_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(Home_Points = mean(home_points)) %>%
+  as.data.frame()
+dp2 <- df %>%
+  group_by(Winning_Team) %>%
+  filter(Winning_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(away_points = mean(away_points)) %>%
+  as.data.frame()
+colnames(dp2) = c('Winning_Team', 'Home_Points')
+v3 <- rbind(dp1, dp2)
+v3$group <- c(rep("Home_Points", nrow(dp1)), rep("Away_Points", nrow(dp2)))
+v3 %>%
+  ggplot(aes(x=Winning_Team, y=Home_Points, fill = group)) +
+  geom_bar(stat="identity", position = 'dodge') + labs(x = 'Winning Team', y = 'Points Scored', title = 'Home/Away Points vs Win/Loss')
+```
+**Visualization for 3 pointers scored in home vs away**
+```{r}
+
+df <- df %>%
+  mutate(Won = ifelse(home_points > away_points, 1, 0))
+  
+de1 <- df %>%
+  group_by(Winning_Team) %>%
+  filter(Winning_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(ThreeP_Home = mean(`3pt_made_home`)) 
+
+de2 <- df %>%
+  group_by(Winning_Team) %>%
+  filter(Winning_Team == c('GS', 'SA', 'CLE', 'TOR', 'OKC', 'MIA', 'LAC')) %>%
+  summarise(ThreeP_Away = mean(`3pt_made_away`)) 
+
+colnames(de2) = c('Winning_Team', 'ThreeP_Home')
+v3 <- rbind(de1, de2)
+v3$ThreeP_Home <- as.integer(v3$ThreeP_Home)
+v3$group <- c(rep("Home_Points", nrow(dp1)), rep("Away_Points", nrow(dp2)))
+v3 %>%
+  ggplot(aes(x=Winning_Team, y=ThreeP_Home, fill = group)) +
+  geom_bar(stat="identity", position = 'dodge') + labs(x = 'Team', y = 'Three Pointers Scored', title = 'Home/Away Three Pointers vs Win/Loss')
+```
+
+## Logistic Regression Model
+
+## Using Logistic Regression Model we received an Accuracy 0f 86% for the Home Team winning.
+```{r}
+smp_size <- floor(0.75 * nrow(df))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(df)), size = smp_size)
+train <- df[train_ind, ]
+test <- df[-train_ind, ]
+#train$fast_break_points_home
+#test$points_in_paint_home
+train$Won <- factor(train$Won)
+model <- glm(Won ~ home_points +`3pt_made_home`   + fast_break_points_home +offensive_rebounds_home  + Winning_freethrow_attempts + points_home  + steals_home + assists_home + assists_away + `field_goal_%_away`  + turnovers_home + blocks_home, data = train, family = binomial)
+predictions<-model %>% predict(test)
+predicted.classes <- ifelse(predictions > 0.5, 1, 0)
+
+test$Predicted_Win_Loss <- predicted.classes
+mean(test$Predicted_Win_Loss == test$Won) * 100
+```
+
+## Conclusion:- 
+
+The important parameters we considered for the Analysis are :- In Home Game, Home team has higher chances of winning the game. In Half time Analysis the wining team in high time has more percentage of winning the game. In rebound If the boxplot has median towards the positive side the winning chances are more for the team. The Accuracy of Logistic Regression of Home Team winning is 84%.
+
+## Bias:-
+
+We have done our analysis for only 2015-16 season. For a good analysis, we should consider the trend of these variables and also for the latest seasons to predict more accurately.
+
+Also we have considered three point percentage made by the home team and predicted that if they convert 28% of their 3 pointers, they might win the game. It also depends on how many three pointer attempts were made by the team. If the team attempts only 3 three pointers and convert one of them, would this lead to a win? These questions can be answered through further analysis.
